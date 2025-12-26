@@ -17,7 +17,8 @@ impl KeystoreService {
 
     pub fn get_key_entry(&self, key: &KeyDescriptor, caller_uid: u32) -> Result<KeyEntryResponse> {
         let db = self.db.lock().unwrap();
-        let (_guard, mut entry) = db.load_key_entry(key, None).context("Failed to load key entry")?;
+        let (_guard, mut entry) =
+            db.load_key_entry(key, None).context("Failed to load key entry")?;
 
         if let Domain::App = key.domain {
             if caller_uid as i64 != key.namespace {

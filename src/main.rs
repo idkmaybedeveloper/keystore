@@ -1,18 +1,21 @@
 use keystore::{
     Keystore,
-    key_parameter::{KeyParameter, Tag, KeyParameterValue},
-    crypto::{generate_aes256_key, generate_aes128_key, generate_salt, generate_random_data, hmac_sha256, aes_gcm_encrypt, aes_gcm_decrypt, hkdf_extract, hkdf_expand, Password},
     boot_level_keys::{BootLevelKeyCache, get_level_zero_key},
-    permission::{KeyPerm, KeyPermSet, check_key_permission, check_grant_permission},
-    utils::{count_key_entries, list_key_entries, uid_to_android_user},
-    operation::{Operation, OperationDb, OperationState},
-    metrics::Metrics,
-    security_level::SecurityLevel,
+    crypto::{
+        Password, aes_gcm_decrypt, aes_gcm_encrypt, generate_aes128_key, generate_aes256_key,
+        generate_random_data, generate_salt, hkdf_expand, hkdf_extract, hmac_sha256,
+    },
     database::Domain,
+    key_parameter::{KeyParameter, KeyParameterValue, Tag},
+    metrics::Metrics,
+    operation::{Operation, OperationDb, OperationState},
+    permission::{KeyPerm, KeyPermSet, check_grant_permission, check_key_permission},
+    security_level::SecurityLevel,
+    utils::{count_key_entries, list_key_entries, uid_to_android_user},
 };
 use log::{error, info};
-use std::io::Write;
 use std::ffi::CString;
+use std::io::Write;
 use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
@@ -61,14 +64,8 @@ fn test_keystore() -> anyhow::Result<()> {
     let keystore = Keystore::new(db_path)?;
 
     let params = vec![
-        KeyParameter {
-            tag: Tag::Algorithm,
-            value: KeyParameterValue::Algorithm(1),
-        },
-        KeyParameter {
-            tag: Tag::KeySize,
-            value: KeyParameterValue::KeySize(256),
-        },
+        KeyParameter { tag: Tag::Algorithm, value: KeyParameterValue::Algorithm(1) },
+        KeyParameter { tag: Tag::KeySize, value: KeyParameterValue::KeySize(256) },
     ];
 
     let key_blob = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
