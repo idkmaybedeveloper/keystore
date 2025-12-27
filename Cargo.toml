@@ -3,7 +3,7 @@ name = "keystore"
 description = "interesting library..."
 version = "0.1.2"
 edition = "2024"
-
+repository = "https://labs.wejust.rest/lain/keystore"
 [dependencies]
 anyhow = "1.0"
 thiserror = "1.0"
