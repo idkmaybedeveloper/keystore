@@ -1,7 +1,7 @@
 [package]
 name = "keystore"
 description = "interesting library..."
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 repository = "https://labs.wejust.rest/lain/keystore"
 [dependencies]
