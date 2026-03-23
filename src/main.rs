@@ -414,22 +414,35 @@ fn test_keystore_multiple_keys() -> anyhow::Result<()> {
     let keystore = Keystore::new(&db_path)?;
 
     let keys_data = vec![
-        ("aes_key_1", vec![KeyParameter {
-            tag: Tag::Algorithm,
-            value: KeyParameterValue::Algorithm(32), // AES
-        }], vec![1u8; 16]),
-        ("aes_key_2", vec![KeyParameter {
-            tag: Tag::Algorithm,
-            value: KeyParameterValue::Algorithm(32),
-        }], vec![2u8; 32]),
-        ("rsa_key_1", vec![KeyParameter {
-            tag: Tag::Algorithm,
-            value: KeyParameterValue::Algorithm(1), // RSA
-        }], vec![3u8; 64]),
-        ("ec_key_1", vec![KeyParameter {
-            tag: Tag::Algorithm,
-            value: KeyParameterValue::Algorithm(3), // EC
-        }], vec![4u8; 48]),
+        (
+            "aes_key_1",
+            vec![KeyParameter {
+                tag: Tag::Algorithm,
+                value: KeyParameterValue::Algorithm(32), // AES
+            }],
+            vec![1u8; 16],
+        ),
+        (
+            "aes_key_2",
+            vec![KeyParameter { tag: Tag::Algorithm, value: KeyParameterValue::Algorithm(32) }],
+            vec![2u8; 32],
+        ),
+        (
+            "rsa_key_1",
+            vec![KeyParameter {
+                tag: Tag::Algorithm,
+                value: KeyParameterValue::Algorithm(1), // RSA
+            }],
+            vec![3u8; 64],
+        ),
+        (
+            "ec_key_1",
+            vec![KeyParameter {
+                tag: Tag::Algorithm,
+                value: KeyParameterValue::Algorithm(3), // EC
+            }],
+            vec![4u8; 48],
+        ),
     ];
 
     let mut created_ids = Vec::new();
@@ -469,10 +482,8 @@ fn test_keystore_namespaces() -> anyhow::Result<()> {
     }
 
     let keystore = Keystore::new(&db_path)?;
-    let params = vec![KeyParameter {
-        tag: Tag::Algorithm,
-        value: KeyParameterValue::Algorithm(32),
-    }];
+    let params =
+        vec![KeyParameter { tag: Tag::Algorithm, value: KeyParameterValue::Algorithm(32) }];
 
     let blob_ns1 = vec![0x11u8; 16];
     let blob_ns2 = vec![0x22u8; 16];
@@ -538,10 +549,7 @@ fn test_operation_concurrency() -> anyhow::Result<()> {
 
     let total_expected = num_threads * ops_per_thread;
     let actual_count = op_db.count();
-    info!(
-        "Concurrent operation adds: expected {}, got {}",
-        total_expected, actual_count
-    );
+    info!("Concurrent operation adds: expected {}, got {}", total_expected, actual_count);
     assert_eq!(actual_count, total_expected);
     assert_eq!(all_operations.lock().unwrap().len(), total_expected);
 
@@ -568,10 +576,7 @@ fn test_operation_concurrency() -> anyhow::Result<()> {
         total_pruned += handle.join().expect("Thread panicked");
     }
 
-    info!(
-        "Concurrent pruning: {} prune calls completed without panics",
-        total_pruned
-    );
+    info!("Concurrent pruning: {} prune calls completed without panics", total_pruned);
 
     // Drop all operations to test cleanup
     drop(all_operations);

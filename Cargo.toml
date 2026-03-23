@@ -4,19 +4,26 @@ description = "interesting library..."
 version = "0.1.4"
 edition = "2024"
 repository = "https://labs.wejust.rest/lain/keystore"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused = { level = "deny", priority = -1 }
+
+[lints.clippy]
+upper_case_acronyms = "allow"
+
 [dependencies]
 anyhow = "1.0"
-thiserror = "1.0"
-rusqlite = { version = "0.31", features = ["bundled"] }
+thiserror = "2.0"
+rusqlite = { version = "0.39", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
 log = "0.4"
 env_logger = "0.11"
-rand = "0.8"
+rand = "0.10"
 openssl = "0.10"
 hex = "0.4"
 chrono = "0.4"
-rustfmt = "0.10.0"
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = "3.27"

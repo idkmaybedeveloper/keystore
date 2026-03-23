@@ -13,12 +13,11 @@ pub enum IdRotationState {
 
 pub struct IdRotation {
     state: Mutex<IdRotationState>,
-    db: Arc<Mutex<KeystoreDB>>,
 }
 
 impl IdRotation {
-    pub fn new(db: Arc<Mutex<KeystoreDB>>) -> Self {
-        Self { state: Mutex::new(IdRotationState::NotStarted), db }
+    pub fn new(_db: Arc<Mutex<KeystoreDB>>) -> Self {
+        Self { state: Mutex::new(IdRotationState::NotStarted) }
     }
 
     pub fn state(&self) -> IdRotationState {

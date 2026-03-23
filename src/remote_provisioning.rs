@@ -3,13 +3,11 @@ use crate::security_level::SecurityLevel;
 use anyhow::Result;
 
 #[derive(Default)]
-pub struct RemProvState {
-    security_level: SecurityLevel,
-}
+pub struct RemProvState {}
 
 impl RemProvState {
-    pub fn new(security_level: SecurityLevel) -> Self {
-        Self { security_level }
+    pub fn new(_security_level: SecurityLevel) -> Self {
+        Self {}
     }
 
     pub fn get_rkpd_attestation_key_and_certs(

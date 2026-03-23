@@ -4,13 +4,11 @@ use crate::key_parameter::KeyParameter;
 use anyhow::Result;
 use log::info;
 
-pub struct LegacyImporter {
-    db: std::sync::Arc<std::sync::Mutex<KeystoreDB>>,
-}
+pub struct LegacyImporter {}
 
 impl LegacyImporter {
-    pub fn new(db: std::sync::Arc<std::sync::Mutex<KeystoreDB>>) -> Self {
-        Self { db }
+    pub fn new(_db: std::sync::Arc<std::sync::Mutex<KeystoreDB>>) -> Self {
+        Self {}
     }
 
     pub fn import_legacy_key(
