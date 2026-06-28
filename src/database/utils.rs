@@ -6,12 +6,15 @@ pub struct KeyMetaData {
     data: HashMap<i64, KeyMetaEntry>,
 }
 
+/// Key-level metadata. IV and AEAD tag belong in BlobMetaData, not here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyMetaEntry {
     CreationDate(i64),
+    AttestationExpirationDate(i64),
+    AttestationMacedPublicKey(Vec<u8>),
+    AttestationRawPubKey(Vec<u8>),
+    /// ECDH public key (SEC1 encoding) for asymmetric super-key encryption.
     Sec1PublicKey(Vec<u8>),
-    Iv(Vec<u8>),
-    AeadTag(Vec<u8>),
 }
 
 impl KeyMetaData {
@@ -23,26 +26,17 @@ impl KeyMetaData {
         let tag = match &entry {
             KeyMetaEntry::CreationDate(_) => 0,
             KeyMetaEntry::Sec1PublicKey(_) => 1,
-            KeyMetaEntry::Iv(_) => 2,
-            KeyMetaEntry::AeadTag(_) => 3,
+            KeyMetaEntry::AttestationExpirationDate(_) => 2,
+            KeyMetaEntry::AttestationMacedPublicKey(_) => 3,
+            KeyMetaEntry::AttestationRawPubKey(_) => 4,
         };
         self.data.insert(tag, entry);
     }
 
-    pub fn get_iv(&self) -> Option<&Vec<u8>> {
-        self.data.get(&2).and_then(|e| if let KeyMetaEntry::Iv(iv) = e { Some(iv) } else { None })
-    }
-
-    pub fn get_aead_tag(&self) -> Option<&Vec<u8>> {
-        self.data
-            .get(&3)
-            .and_then(|e| if let KeyMetaEntry::AeadTag(tag) = e { Some(tag) } else { None })
-    }
-
     pub fn get_creation_date(&self) -> Option<i64> {
-        self.data
-            .get(&0)
-            .and_then(|e| if let KeyMetaEntry::CreationDate(date) = e { Some(*date) } else { None })
+        self.data.get(&0).and_then(|e| {
+            if let KeyMetaEntry::CreationDate(d) = e { Some(*d) } else { None }
+        })
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (i64, &KeyMetaEntry)> {
@@ -95,18 +89,32 @@ impl BlobMetaData {
     }
 
     pub fn encrypted_by(&self) -> Option<&EncryptedBy> {
-        self.data
-            .get(&0)
-            .and_then(|e| if let BlobMetaEntry::EncryptedBy(eb) = e { Some(eb) } else { None })
+        self.data.get(&0).and_then(|e| {
+            if let BlobMetaEntry::EncryptedBy(eb) = e { Some(eb) } else { None }
+        })
+    }
+
+    pub fn salt(&self) -> Option<&Vec<u8>> {
+        self.data.get(&1).and_then(|e| {
+            if let BlobMetaEntry::Salt(s) = e { Some(s) } else { None }
+        })
     }
 
     pub fn iv(&self) -> Option<&Vec<u8>> {
-        self.data.get(&2).and_then(|e| if let BlobMetaEntry::Iv(iv) = e { Some(iv) } else { None })
+        self.data.get(&2).and_then(|e| {
+            if let BlobMetaEntry::Iv(iv) = e { Some(iv) } else { None }
+        })
     }
 
     pub fn aead_tag(&self) -> Option<&Vec<u8>> {
-        self.data
-            .get(&3)
-            .and_then(|e| if let BlobMetaEntry::AeadTag(tag) = e { Some(tag) } else { None })
+        self.data.get(&3).and_then(|e| {
+            if let BlobMetaEntry::AeadTag(tag) = e { Some(tag) } else { None }
+        })
+    }
+
+    pub fn max_boot_level(&self) -> Option<&i32> {
+        self.data.get(&6).and_then(|e| {
+            if let BlobMetaEntry::MaxBootLevel(l) = e { Some(l) } else { None }
+        })
     }
 }

@@ -3,7 +3,10 @@ mod zvec;
 pub use zvec::ZVec;
 
 use anyhow::Result;
+use openssl::hash::MessageDigest;
+use openssl::pkey::PKey;
 use openssl::rand::rand_bytes;
+use openssl::sign::Signer;
 use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
 
 pub const GCM_IV_LENGTH: usize = 12;
@@ -12,6 +15,9 @@ pub const AES_256_KEY_LENGTH: usize = 32;
 pub const AES_128_KEY_LENGTH: usize = 16;
 pub const SALT_LENGTH: usize = 16;
 pub const HMAC_SHA256_LEN: usize = 32;
+
+/// Old keystore versions produced 16-byte IVs with 4 ignored trailing zero bytes.
+pub const LEGACY_IV_LENGTH: usize = 16;
 
 pub fn generate_aes256_key() -> Result<ZVec> {
     let mut key = ZVec::new(AES_256_KEY_LENGTH)?;
@@ -26,9 +32,7 @@ pub fn generate_aes128_key() -> Result<ZVec> {
 }
 
 pub fn generate_salt() -> Result<Vec<u8>> {
-    let mut salt = vec![0; SALT_LENGTH];
-    rand_bytes(&mut salt)?;
-    Ok(salt)
+    generate_random_data(SALT_LENGTH)
 }
 
 pub fn generate_random_data(size: usize) -> Result<Vec<u8>> {
@@ -38,10 +42,6 @@ pub fn generate_random_data(size: usize) -> Result<Vec<u8>> {
 }
 
 pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> Result<Vec<u8>> {
-    use openssl::hash::MessageDigest;
-    use openssl::pkey::PKey;
-    use openssl::sign::Signer;
-
     let pkey = PKey::hmac(key)?;
     let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
     signer.update(msg)?;
@@ -49,19 +49,19 @@ pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> Result<Vec<u8>> {
 }
 
 pub fn aes_gcm_decrypt(data: &[u8], iv: &[u8], tag: &[u8], key: &[u8]) -> Result<ZVec> {
-    if iv.len() != GCM_IV_LENGTH {
-        anyhow::bail!("Invalid IV length");
-    }
+    let iv = match iv.len() {
+        GCM_IV_LENGTH => iv,
+        LEGACY_IV_LENGTH => &iv[..GCM_IV_LENGTH],
+        _ => anyhow::bail!("invalid IV length: {}", iv.len()),
+    };
     if tag.len() != TAG_LENGTH {
-        anyhow::bail!("Invalid tag length");
+        anyhow::bail!("invalid AEAD tag length: {}", tag.len());
     }
-
     let cipher = match key.len() {
         AES_128_KEY_LENGTH => Cipher::aes_128_gcm(),
         AES_256_KEY_LENGTH => Cipher::aes_256_gcm(),
-        _ => anyhow::bail!("Invalid key length"),
+        _ => anyhow::bail!("invalid key length: {}", key.len()),
     };
-
     let plaintext = decrypt_aead(cipher, key, Some(iv), &[], data, tag)?;
     Ok(ZVec::from_vec(plaintext))
 }
@@ -69,16 +69,13 @@ pub fn aes_gcm_decrypt(data: &[u8], iv: &[u8], tag: &[u8], key: &[u8]) -> Result
 pub fn aes_gcm_encrypt(plaintext: &[u8], key: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let mut iv = vec![0; GCM_IV_LENGTH];
     rand_bytes(&mut iv)?;
-
     let cipher = match key.len() {
         AES_128_KEY_LENGTH => Cipher::aes_128_gcm(),
         AES_256_KEY_LENGTH => Cipher::aes_256_gcm(),
-        _ => anyhow::bail!("Invalid key length"),
+        _ => anyhow::bail!("invalid key length: {}", key.len()),
     };
-
     let mut tag = vec![0; TAG_LENGTH];
     let ciphertext = encrypt_aead(cipher, key, Some(&iv), &[], plaintext, &mut tag)?;
-
     Ok((ciphertext, iv, tag))
 }
 
@@ -94,97 +91,73 @@ impl<'a> From<&'a [u8]> for Password<'a> {
 }
 
 impl<'a> Password<'a> {
-    fn get_key(&'a self) -> &'a [u8] {
+    pub fn as_bytes(&'a self) -> &'a [u8] {
         match self {
             Self::Ref(b) => b,
             Self::Owned(z) => z.as_ref(),
         }
     }
 
+    fn get_key(&'a self) -> &'a [u8] {
+        self.as_bytes()
+    }
+
+    /// Key derivation via PBKDF2-SHA256 (8192 iterations).
+    /// Kept for backwards compatibility with old databases.
     pub fn derive_key_pbkdf2(&self, salt: &[u8], out_len: usize) -> Result<ZVec> {
         if salt.len() != SALT_LENGTH {
-            anyhow::bail!("Invalid salt length");
+            anyhow::bail!("invalid salt length: {}", salt.len());
         }
         match out_len {
             AES_128_KEY_LENGTH | AES_256_KEY_LENGTH => {}
-            _ => anyhow::bail!("Invalid key length"),
+            _ => anyhow::bail!("invalid output length: {}", out_len),
         }
 
-        use openssl::pkcs5::pbkdf2_hmac;
         let pw = self.get_key();
         let mut result = ZVec::new(out_len)?;
-        pbkdf2_hmac(pw, salt, 8192, openssl::hash::MessageDigest::sha256(), result.as_mut())?;
+        openssl::pkcs5::pbkdf2_hmac(pw, salt, 8192, MessageDigest::sha256(), result.as_mut())?;
         Ok(result)
     }
 
+    /// Key derivation via HKDF-SHA256 (RFC 5869).
+    /// Preferred for high-entropy synthetic passwords.
     pub fn derive_key_hkdf(&self, salt: &[u8], out_len: usize) -> Result<ZVec> {
-        use openssl::pkcs5::pbkdf2_hmac;
-        let mut prk = vec![0; 32];
-        pbkdf2_hmac(self.get_key(), salt, 1, openssl::hash::MessageDigest::sha256(), &mut prk)?;
-
-        let mut out = vec![0; out_len];
-        let info = [];
-        hkdf_expand_internal(out_len, &prk, &info, &mut out)?;
-        Ok(ZVec::from_vec(out))
+        let prk = hkdf_extract(self.get_key(), salt)?;
+        hkdf_expand(out_len, &prk, &[])
     }
 }
 
-fn hkdf_expand_internal(out_len: usize, _prk: &[u8], info: &[u8], out: &mut [u8]) -> Result<()> {
-    use openssl::hash::{MessageDigest, hash};
-
-    let hash_len = MessageDigest::sha256().size();
-    let n = (out_len + hash_len - 1) / hash_len;
-
-    let mut offset = 0;
-    for i in 1..=n {
-        let mut input = Vec::new();
-        if i > 1 {
-            input.extend_from_slice(&out[offset - hash_len..offset]);
-        }
-        input.extend_from_slice(info);
-        input.push(i as u8);
-
-        let t = hash(MessageDigest::sha256(), &input)?;
-        let copy_len = std::cmp::min(hash_len, out_len - offset);
-        out[offset..offset + copy_len].copy_from_slice(&t[..copy_len]);
-        offset += copy_len;
-    }
-
-    Ok(())
-}
-
-pub fn hkdf_extract(secret: &[u8], salt: &[u8]) -> Result<Vec<u8>> {
-    use openssl::hash::MessageDigest;
-    use openssl::pkey::PKey;
-    use openssl::sign::Signer;
-
+/// HKDF-Extract(salt, IKM) = HMAC-SHA256(salt, IKM) → PRK.
+pub fn hkdf_extract(secret: &[u8], salt: &[u8]) -> Result<ZVec> {
     let pkey = PKey::hmac(salt)?;
     let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
     signer.update(secret)?;
-    Ok(signer.sign_to_vec()?)
+    Ok(ZVec::from_vec(signer.sign_to_vec()?))
 }
 
-pub fn hkdf_expand(out_len: usize, _prk: &[u8], info: &[u8]) -> Result<ZVec> {
-    use openssl::hash::{MessageDigest, hash};
+/// HKDF-Expand(PRK, info, L) using HMAC-SHA256.
+pub fn hkdf_expand(out_len: usize, prk: &[u8], info: &[u8]) -> Result<ZVec> {
+    const HASH_LEN: usize = 32; // SHA-256
+    let n = (out_len + HASH_LEN - 1) / HASH_LEN;
 
-    let hash_len = MessageDigest::sha256().size();
-    let n = (out_len + hash_len - 1) / hash_len;
-
+    let pkey = PKey::hmac(prk)?;
     let mut out = ZVec::new(out_len)?;
+    let mut prev: Vec<u8> = Vec::new();
     let mut offset = 0;
 
     for i in 1..=n {
-        let mut input = Vec::new();
-        if i > 1 {
-            input.extend_from_slice(&out.as_ref()[offset - hash_len..offset]);
+        let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
+        if !prev.is_empty() {
+            signer.update(&prev)?;
         }
-        input.extend_from_slice(info);
-        input.push(i as u8);
+        signer.update(info)?;
+        signer.update(&[i as u8])?;
+        let t = signer.sign_to_vec()?;
 
-        let t = hash(MessageDigest::sha256(), &input)?;
-        let copy_len = std::cmp::min(hash_len, out_len - offset);
+        let copy_len = std::cmp::min(HASH_LEN, out_len - offset);
         out.as_mut()[offset..offset + copy_len].copy_from_slice(&t[..copy_len]);
         offset += copy_len;
+        prev = t;
     }
 
     Ok(out)

@@ -1,11 +1,13 @@
 use crate::database::utils::EncryptedBy;
 use crate::database::{
-    BlobMetaData, KEYSTORE_UUID, KeyDescriptor, KeyMetaData, KeyType, KeystoreDB,
+    BlobMetaData, BlobMetaEntry, KEYSTORE_UUID, KeyDescriptor, KeyMetaData, KeyMetaEntry, KeyType,
+    KeystoreDB,
 };
 use crate::error::{Error, ResponseCode};
 use crate::key_parameter::KeyParameter;
 use crate::operation::{Operation, OperationDb};
 use crate::super_key::{SuperKey, SuperKeyManager, USER_SUPER_KEY};
+use crate::crypto::{Password, ZVec};
 use anyhow::Result;
 use log::error;
 use std::path::Path;
@@ -15,6 +17,7 @@ pub struct Keystore {
     db: Arc<Mutex<KeystoreDB>>,
     super_key_manager: Arc<Mutex<SuperKeyManager>>,
     operation_db: Arc<OperationDb>,
+    password: ZVec,
 }
 
 #[derive(Debug, Clone)]
@@ -24,12 +27,13 @@ pub struct KeyMetadata {
 }
 
 impl Keystore {
-    pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(db_path: P, password: &[u8]) -> Result<Self> {
         let db = KeystoreDB::new(db_path.as_ref())?;
         Ok(Self {
             db: Arc::new(Mutex::new(db)),
             super_key_manager: Arc::new(Mutex::new(SuperKeyManager::new())),
             operation_db: Arc::new(OperationDb::new()),
+            password: ZVec::from_slice(password),
         })
     }
 
@@ -60,30 +64,20 @@ impl Keystore {
         let super_key = self.get_super_key(&mut db, 0)?;
 
         let (encrypted_blob, iv, tag) = super_key.encrypt(&key_blob)?;
-        log::debug!(
-            "Encrypted blob: {} bytes, IV: {} bytes, Tag: {} bytes",
-            encrypted_blob.len(),
-            iv.len(),
-            tag.len()
-        );
 
         let mut blob_metadata = BlobMetaData::new();
-        blob_metadata.add(crate::database::BlobMetaEntry::EncryptedBy(EncryptedBy::KeyId(
+        blob_metadata.add(BlobMetaEntry::EncryptedBy(EncryptedBy::KeyId(
             match super_key.id {
                 crate::super_key::SuperKeyIdentifier::DatabaseId(id) => id,
             },
         )));
+        blob_metadata.add(BlobMetaEntry::Iv(iv));
+        blob_metadata.add(BlobMetaEntry::AeadTag(tag));
 
         let mut key_metadata = KeyMetaData::new();
-        key_metadata.add(crate::database::KeyMetaEntry::CreationDate(
+        key_metadata.add(KeyMetaEntry::CreationDate(
             crate::database::DateTime::now()?.to_millis_epoch(),
         ));
-        key_metadata.add(crate::database::KeyMetaEntry::Iv(iv.clone()));
-        key_metadata.add(crate::database::KeyMetaEntry::AeadTag(tag.clone()));
-        log::debug!(
-            "Key metadata entries before save: {:?}",
-            key_metadata.iter().collect::<Vec<_>>()
-        );
 
         let key_id_guard = db.store_new_key(
             &key,
@@ -108,18 +102,18 @@ impl Keystore {
         let mut db = self.db.lock().unwrap();
         let (_guard, mut entry) = db.load_key_entry(&key, None)?;
 
+        let key_id = entry.id();
         let encrypted_blob = entry.take_key_blob().ok_or(Error::Rc(ResponseCode::KeyNotFound))?;
 
         let super_key = self.get_super_key(&mut db, 0)?;
 
-        let metadata = entry.metadata();
-        log::debug!("Metadata entries: {:?}", metadata.iter().collect::<Vec<_>>());
-        let iv = metadata.get_iv().ok_or_else(|| {
-            error!("IV not found in metadata");
+        let blob_meta = db.load_blob_metadata_for_key(key_id)?;
+        let iv = blob_meta.iv().ok_or_else(|| {
+            error!("IV not found in blob metadata");
             Error::Rc(ResponseCode::ValueCorrupted)
         })?;
-        let tag = metadata.get_aead_tag().ok_or_else(|| {
-            error!("Tag not found in metadata");
+        let tag = blob_meta.aead_tag().ok_or_else(|| {
+            error!("AEAD tag not found in blob metadata");
             Error::Rc(ResponseCode::ValueCorrupted)
         })?;
 
@@ -141,10 +135,8 @@ impl Keystore {
     }
 
     fn get_super_key(&self, db: &mut KeystoreDB, user_id: u32) -> Result<Arc<SuperKey>> {
-        let password = crate::crypto::Password::Ref(&[0u8; 32]);
+        let password = Password::Ref(self.password.as_ref());
         let mut manager = self.super_key_manager.lock().unwrap();
-        let super_key = manager.get_or_create_super_key(db, user_id, &USER_SUPER_KEY, password)?;
-        log::debug!("Super key ID: {:?}", super_key.id);
-        Ok(super_key)
+        manager.get_or_create_super_key(db, user_id, &USER_SUPER_KEY, password)
     }
 }

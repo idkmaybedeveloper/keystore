@@ -66,7 +66,7 @@ fn test_keystore() -> anyhow::Result<()> {
         std::fs::remove_file(&db_file)?;
     }
 
-    let keystore = Keystore::new(db_path)?;
+    let keystore = Keystore::new(db_path, b"test_keystore_password_2025")?;
 
     let params = vec![
         KeyParameter { tag: Tag::Algorithm, value: KeyParameterValue::Algorithm(1) },
@@ -411,7 +411,7 @@ fn test_keystore_multiple_keys() -> anyhow::Result<()> {
         std::fs::remove_file(&db_file)?;
     }
 
-    let keystore = Keystore::new(&db_path)?;
+    let keystore = Keystore::new(&db_path, b"test_keystore_password_2025")?;
 
     let keys_data = vec![
         (
@@ -481,7 +481,7 @@ fn test_keystore_namespaces() -> anyhow::Result<()> {
         std::fs::remove_file(&db_file)?;
     }
 
-    let keystore = Keystore::new(&db_path)?;
+    let keystore = Keystore::new(&db_path, b"test_keystore_password_2025")?;
     let params =
         vec![KeyParameter { tag: Tag::Algorithm, value: KeyParameterValue::Algorithm(32) }];
 

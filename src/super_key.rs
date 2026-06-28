@@ -1,8 +1,7 @@
 use crate::crypto::{Password, ZVec, aes_gcm_decrypt, aes_gcm_encrypt, generate_aes256_key};
 use crate::database::utils::EncryptedBy;
 use crate::database::{
-    BlobMetaData, BlobMetaEntry, KEYSTORE_UUID, KeyDescriptor, KeyMetaData, KeyMetaEntry, KeyType,
-    KeystoreDB,
+    BlobMetaData, BlobMetaEntry, KEYSTORE_UUID, KeyDescriptor, KeyMetaData, KeyType, KeystoreDB,
 };
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -21,7 +20,7 @@ pub struct SuperKeyType<'a> {
 pub const USER_SUPER_KEY: SuperKeyType = SuperKeyType {
     alias: "USER_SUPER_KEY",
     algorithm: SuperEncryptionAlgorithm::Aes256Gcm,
-    name: "User super key",
+    name: "AfterFirstUnlock super key",
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -45,7 +44,7 @@ impl SuperKey {
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
         match self.algorithm {
             SuperEncryptionAlgorithm::Aes256Gcm => {
-                aes_gcm_encrypt(plaintext, &self.key).context("Encryption failed")
+                aes_gcm_encrypt(plaintext, &self.key).context("encryption failed")
             }
         }
     }
@@ -53,7 +52,7 @@ impl SuperKey {
     pub fn decrypt(&self, data: &[u8], iv: &[u8], tag: &[u8]) -> Result<ZVec> {
         match self.algorithm {
             SuperEncryptionAlgorithm::Aes256Gcm => {
-                aes_gcm_decrypt(data, iv, tag, &self.key).context("Decryption failed")
+                aes_gcm_decrypt(data, iv, tag, &self.key).context("decryption failed")
             }
         }
     }
@@ -80,39 +79,30 @@ impl SuperKeyManager {
             return Ok(cached.clone());
         }
 
-        let key = KeyDescriptor {
+        let key_desc = KeyDescriptor {
             domain: crate::database::Domain::App,
             namespace: user_id as i64,
             alias: Some(key_type.alias.to_string()),
         };
 
-        if let Ok((_guard, mut entry)) = db.load_key_entry(&key, None) {
+        if let Ok((_guard, mut entry)) = db.load_key_entry(&key_desc, None) {
             if let Some(blob) = entry.take_key_blob() {
-                let metadata = entry.metadata();
-                let salt = metadata
-                    .iter()
-                    .find(|(_, e)| matches!(e, KeyMetaEntry::Sec1PublicKey(_)))
-                    .map(|(_, e)| {
-                        if let KeyMetaEntry::Sec1PublicKey(salt) = e {
-                            salt.clone()
-                        } else {
-                            vec![]
-                        }
-                    })
-                    .unwrap_or_default();
+                let blob_meta = db.load_blob_metadata_for_key(entry.id())?;
 
-                let blob_metadata = db.load_blob_metadata_for_key(entry.id())?;
-                let iv = blob_metadata.iv().cloned();
-                let tag = blob_metadata.aead_tag().cloned();
+                let salt = blob_meta.salt().cloned().unwrap_or_default();
+                let iv = blob_meta.iv();
+                let tag = blob_meta.aead_tag();
 
                 if let (Some(iv), Some(tag)) = (iv, tag) {
-                    let derived_key = password.derive_key_hkdf(&salt, 32)?;
-                    let decrypted = aes_gcm_decrypt(&blob, &iv, &tag, &derived_key.as_ref())?;
-                    let super_key = Arc::new(SuperKey {
-                        algorithm: key_type.algorithm,
-                        key: decrypted,
-                        id: SuperKeyIdentifier::DatabaseId(entry.id()),
-                    });
+                    let super_key = Self::extract_super_key(
+                        key_type.algorithm,
+                        &blob,
+                        iv,
+                        tag,
+                        &salt,
+                        &password,
+                        entry.id(),
+                    )?;
                     self.keys.insert(cache_key, super_key.clone());
                     return Ok(super_key);
                 }
@@ -124,43 +114,62 @@ impl SuperKeyManager {
         Ok(super_key)
     }
 
+    /// Decrypt an existing super key from its persisted blob.
+    /// Tries HKDF first (new format), falls back to PBKDF2 (legacy format).
+    fn extract_super_key(
+        algorithm: SuperEncryptionAlgorithm,
+        blob: &[u8],
+        iv: &[u8],
+        tag: &[u8],
+        salt: &[u8],
+        password: &Password,
+        db_id: i64,
+    ) -> Result<Arc<SuperKey>> {
+        let key = password
+            .derive_key_hkdf(salt, 32)
+            .and_then(|k| aes_gcm_decrypt(blob, iv, tag, &k))
+            .or_else(|_| {
+                password
+                    .derive_key_pbkdf2(salt, 32)
+                    .and_then(|k| aes_gcm_decrypt(blob, iv, tag, &k))
+            })
+            .context("failed to decrypt super key (tried HKDF and PBKDF2)")?;
+
+        Ok(Arc::new(SuperKey { algorithm, key, id: SuperKeyIdentifier::DatabaseId(db_id) }))
+    }
+
     fn create_super_key(
         db: &mut KeystoreDB,
         user_id: u32,
         key_type: &SuperKeyType,
         password: Password,
     ) -> Result<Arc<SuperKey>> {
-        let super_key = generate_aes256_key().context("Failed to generate AES-256 key")?;
+        let super_key = generate_aes256_key().context("failed to generate AES-256 key")?;
 
         let salt = crate::crypto::generate_salt()?;
         let derived_key = password.derive_key_hkdf(&salt, 32)?;
+        let (encrypted_blob, iv, tag) =
+            aes_gcm_encrypt(super_key.as_ref(), &derived_key).context("failed to encrypt")?;
 
-        let (encrypted_super_key, iv, tag) =
-            aes_gcm_encrypt(&super_key.as_ref(), &derived_key).context("Failed to encrypt")?;
-
-        let salt_clone = salt.clone();
         let mut blob_metadata = BlobMetaData::new();
         blob_metadata.add(BlobMetaEntry::EncryptedBy(EncryptedBy::Password));
         blob_metadata.add(BlobMetaEntry::Salt(salt));
         blob_metadata.add(BlobMetaEntry::Iv(iv));
         blob_metadata.add(BlobMetaEntry::AeadTag(tag));
 
-        let mut key_metadata = KeyMetaData::new();
-        key_metadata.add(KeyMetaEntry::Sec1PublicKey(salt_clone));
-
-        let key = KeyDescriptor {
+        let key_desc = KeyDescriptor {
             domain: crate::database::Domain::App,
             namespace: user_id as i64,
             alias: Some(key_type.alias.to_string()),
         };
 
         let key_id_guard = db.store_new_key(
-            &key,
+            &key_desc,
             KeyType::Super,
             &[],
-            &encrypted_super_key,
+            &encrypted_blob,
             &blob_metadata,
-            &key_metadata,
+            &KeyMetaData::new(),
             &KEYSTORE_UUID,
         )?;
 
@@ -171,3 +180,4 @@ impl SuperKeyManager {
         }))
     }
 }
+

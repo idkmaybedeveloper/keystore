@@ -89,7 +89,7 @@ impl OperationDb {
         }
 
         candidates.sort_by_key(|(_, age)| *age);
-        let (oldest, _) = candidates.remove(0);
+        let (oldest, _) = candidates.pop()?;
         oldest.set_state(OperationState::Pruned);
 
         ops.retain(|w| w.strong_count() > 0);

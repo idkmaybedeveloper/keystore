@@ -400,24 +400,20 @@ impl KeystoreDB {
 
     pub fn load_blob_metadata_for_key(&self, key_id: i64) -> Result<BlobMetaData> {
         let mut stmt = self.conn.prepare(
-            "SELECT be.id, bm.tag, bm.data FROM blobentry be
-             JOIN blobmetadata bm ON be.id = bm.blobentryid
-             WHERE be.keyentryid = ? AND be.subcomponent_type = ?
-             ORDER BY be.id DESC LIMIT 1",
+            "SELECT bm.tag, bm.data FROM blobmetadata bm
+             WHERE bm.blobentryid = (
+                 SELECT id FROM blobentry
+                 WHERE keyentryid = ? AND subcomponent_type = ?
+                 ORDER BY id DESC LIMIT 1
+             )",
         )?;
         let mut rows = stmt.query(params![key_id, SubComponentType::KeyBlob as i32])?;
         let mut metadata = BlobMetaData::new();
         while let Some(row) = rows.next()? {
-            let _blob_id: i64 = row.get(0)?;
-            let _tag: i64 = row.get(1)?;
-            let data: Vec<u8> = row.get(2)?;
+            let data: Vec<u8> = row.get(1)?;
             match serde_cbor::from_slice::<crate::database::utils::BlobMetaEntry>(&data) {
-                Ok(entry) => {
-                    metadata.add(entry);
-                }
-                Err(e) => {
-                    log::warn!("Failed to deserialize BlobMetaEntry: {}", e);
-                }
+                Ok(entry) => metadata.add(entry),
+                Err(e) => log::warn!("Failed to deserialize BlobMetaEntry: {e}"),
             }
         }
         Ok(metadata)
