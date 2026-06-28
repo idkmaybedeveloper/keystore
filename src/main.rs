@@ -108,7 +108,7 @@ fn test_crypto() -> anyhow::Result<()> {
     let random = generate_random_data(32)?;
     info!("Generated random data: {} bytes", random.len());
 
-    let hmac = hmac_sha256(&key256.as_ref(), b"test message")?;
+    let hmac = hmac_sha256(key256.as_ref(), b"test message")?;
     info!("HMAC-SHA256: {} bytes", hmac.len());
 
     let plaintext = b"test plaintext data";

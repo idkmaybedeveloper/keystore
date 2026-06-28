@@ -63,8 +63,7 @@ fn try_mlock(b: &[u8]) {
     #[cfg(unix)]
     {
         use std::ffi::c_void;
-        let ptr = NonNull::new(b.as_ptr() as *mut c_void)
-            .expect("non-null slice pointer");
+        let ptr = NonNull::new(b.as_ptr() as *mut c_void).expect("non-null slice pointer");
         if let Err(e) = unsafe { nix::sys::mman::mlock(ptr, b.len()) } {
             log::warn!("mlock failed - key material may be swapped to disk: {e}");
         }

@@ -138,7 +138,7 @@ pub fn hkdf_extract(secret: &[u8], salt: &[u8]) -> Result<ZVec> {
 /// HKDF-Expand(PRK, info, L) using HMAC-SHA256.
 pub fn hkdf_expand(out_len: usize, prk: &[u8], info: &[u8]) -> Result<ZVec> {
     const HASH_LEN: usize = 32; // SHA-256
-    let n = (out_len + HASH_LEN - 1) / HASH_LEN;
+    let n = out_len.div_ceil(HASH_LEN);
 
     let pkey = PKey::hmac(prk)?;
     let mut out = ZVec::new(out_len)?;

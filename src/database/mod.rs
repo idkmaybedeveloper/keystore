@@ -16,18 +16,12 @@ pub enum KeyType {
     Super = 1,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Uuid([u8; 16]);
 
 impl Uuid {
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
-    }
-}
-
-impl Default for Uuid {
-    fn default() -> Self {
-        Self([0; 16])
     }
 }
 
@@ -227,6 +221,7 @@ impl KeystoreDB {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn store_new_key(
         &mut self,
         key: &KeyDescriptor,

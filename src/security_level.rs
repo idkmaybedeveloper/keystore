@@ -1,5 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SecurityLevel {
+    #[default]
     Software,
     TrustedEnvironment,
     StrongBox,
@@ -12,11 +13,5 @@ impl SecurityLevel {
             SecurityLevel::TrustedEnvironment => "TRUSTED_ENVIRONMENT",
             SecurityLevel::StrongBox => "STRONGBOX",
         }
-    }
-}
-
-impl Default for SecurityLevel {
-    fn default() -> Self {
-        SecurityLevel::Software
     }
 }

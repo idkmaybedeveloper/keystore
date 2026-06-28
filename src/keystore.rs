@@ -1,3 +1,4 @@
+use crate::crypto::{Password, ZVec};
 use crate::database::utils::EncryptedBy;
 use crate::database::{
     BlobMetaData, BlobMetaEntry, KEYSTORE_UUID, KeyDescriptor, KeyMetaData, KeyMetaEntry, KeyType,
@@ -7,7 +8,6 @@ use crate::error::{Error, ResponseCode};
 use crate::key_parameter::KeyParameter;
 use crate::operation::{Operation, OperationDb};
 use crate::super_key::{SuperKey, SuperKeyManager, USER_SUPER_KEY};
-use crate::crypto::{Password, ZVec};
 use anyhow::Result;
 use log::error;
 use std::path::Path;
@@ -66,18 +66,15 @@ impl Keystore {
         let (encrypted_blob, iv, tag) = super_key.encrypt(&key_blob)?;
 
         let mut blob_metadata = BlobMetaData::new();
-        blob_metadata.add(BlobMetaEntry::EncryptedBy(EncryptedBy::KeyId(
-            match super_key.id {
-                crate::super_key::SuperKeyIdentifier::DatabaseId(id) => id,
-            },
-        )));
+        blob_metadata.add(BlobMetaEntry::EncryptedBy(EncryptedBy::KeyId(match super_key.id {
+            crate::super_key::SuperKeyIdentifier::DatabaseId(id) => id,
+        })));
         blob_metadata.add(BlobMetaEntry::Iv(iv));
         blob_metadata.add(BlobMetaEntry::AeadTag(tag));
 
         let mut key_metadata = KeyMetaData::new();
-        key_metadata.add(KeyMetaEntry::CreationDate(
-            crate::database::DateTime::now()?.to_millis_epoch(),
-        ));
+        key_metadata
+            .add(KeyMetaEntry::CreationDate(crate::database::DateTime::now()?.to_millis_epoch()));
 
         let key_id_guard = db.store_new_key(
             &key,

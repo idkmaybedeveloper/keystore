@@ -49,7 +49,7 @@ impl KeyMintDevice {
                 KeyParameterValue::Algorithm(a) => Some(*a),
                 _ => None,
             })
-            .ok_or_else(|| Error::Rc(ResponseCode::InvalidArgument))
+            .ok_or(Error::Rc(ResponseCode::InvalidArgument))
             .context("Algorithm parameter required")?;
 
         let key_size = params

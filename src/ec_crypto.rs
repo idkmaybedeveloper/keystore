@@ -70,6 +70,7 @@ impl ECDHPrivateKey {
         Ok(aes_key)
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn encrypt_message(
         recipient_public_key: &[u8],
         message: &[u8],

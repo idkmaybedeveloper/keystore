@@ -20,11 +20,11 @@ impl KeystoreService {
         let (_guard, mut entry) =
             db.load_key_entry(key, None).context("Failed to load key entry")?;
 
-        if let Domain::App = key.domain {
-            if caller_uid as i64 != key.namespace {
-                return Err(Error::Rc(ResponseCode::PermissionDenied))
-                    .context("Caller does not own this key");
-            }
+        if let Domain::App = key.domain
+            && caller_uid as i64 != key.namespace
+        {
+            return Err(Error::Rc(ResponseCode::PermissionDenied))
+                .context("Caller does not own this key");
         }
 
         let key_id = entry.id();
@@ -69,11 +69,11 @@ impl KeystoreService {
             _ => return Err(Error::Rc(ResponseCode::InvalidArgument).into()),
         };
 
-        if let Domain::App = domain_enum {
-            if caller_uid as i64 != namespace {
-                return Err(anyhow::anyhow!("Caller cannot list keys in this namespace")
-                    .context(Error::Rc(ResponseCode::PermissionDenied)));
-            }
+        if let Domain::App = domain_enum
+            && caller_uid as i64 != namespace
+        {
+            return Err(anyhow::anyhow!("Caller cannot list keys in this namespace")
+                .context(Error::Rc(ResponseCode::PermissionDenied)));
         }
 
         let mut results = Vec::new();

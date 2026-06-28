@@ -138,10 +138,10 @@ pub fn check_key_permission(
     key: &KeyDescriptor,
     access_vector: &Option<KeyPermSet>,
 ) -> anyhow::Result<()> {
-    if let Some(access_vector) = access_vector {
-        if access_vector.includes(perm) {
-            return Ok(());
-        }
+    if let Some(access_vector) = access_vector
+        && access_vector.includes(perm)
+    {
+        return Ok(());
     }
 
     match key.domain {

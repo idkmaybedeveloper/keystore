@@ -62,6 +62,12 @@ pub struct SuperKeyManager {
     keys: std::collections::HashMap<(u32, String), Arc<SuperKey>>,
 }
 
+impl Default for SuperKeyManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SuperKeyManager {
     pub fn new() -> Self {
         Self { keys: std::collections::HashMap::new() }
@@ -85,27 +91,27 @@ impl SuperKeyManager {
             alias: Some(key_type.alias.to_string()),
         };
 
-        if let Ok((_guard, mut entry)) = db.load_key_entry(&key_desc, None) {
-            if let Some(blob) = entry.take_key_blob() {
-                let blob_meta = db.load_blob_metadata_for_key(entry.id())?;
+        if let Ok((_guard, mut entry)) = db.load_key_entry(&key_desc, None)
+            && let Some(blob) = entry.take_key_blob()
+        {
+            let blob_meta = db.load_blob_metadata_for_key(entry.id())?;
 
-                let salt = blob_meta.salt().cloned().unwrap_or_default();
-                let iv = blob_meta.iv();
-                let tag = blob_meta.aead_tag();
+            let salt = blob_meta.salt().cloned().unwrap_or_default();
+            let iv = blob_meta.iv();
+            let tag = blob_meta.aead_tag();
 
-                if let (Some(iv), Some(tag)) = (iv, tag) {
-                    let super_key = Self::extract_super_key(
-                        key_type.algorithm,
-                        &blob,
-                        iv,
-                        tag,
-                        &salt,
-                        &password,
-                        entry.id(),
-                    )?;
-                    self.keys.insert(cache_key, super_key.clone());
-                    return Ok(super_key);
-                }
+            if let (Some(iv), Some(tag)) = (iv, tag) {
+                let super_key = Self::extract_super_key(
+                    key_type.algorithm,
+                    &blob,
+                    iv,
+                    tag,
+                    &salt,
+                    &password,
+                    entry.id(),
+                )?;
+                self.keys.insert(cache_key, super_key.clone());
+                return Ok(super_key);
             }
         }
 
@@ -180,4 +186,3 @@ impl SuperKeyManager {
         }))
     }
 }
-

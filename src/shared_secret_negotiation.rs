@@ -7,6 +7,12 @@ pub fn perform_shared_secret_negotiation() {
 
 pub struct SharedSecretNegotiation;
 
+impl Default for SharedSecretNegotiation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SharedSecretNegotiation {
     pub fn new() -> Self {
         Self

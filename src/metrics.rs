@@ -20,7 +20,7 @@ impl Metrics {
 
     pub fn record(&self, name: &str, value: f64) {
         let mut metrics = self.metrics.lock().unwrap();
-        let entry = metrics.entry(name.to_string()).or_insert_with(Vec::new);
+        let entry = metrics.entry(name.to_string()).or_default();
         entry.push(Metric { name: name.to_string(), value, timestamp: SystemTime::now() });
 
         if entry.len() > 1000 {

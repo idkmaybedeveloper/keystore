@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+type TaskList = Arc<Mutex<Vec<Box<dyn Fn() + Send + 'static>>>>;
+
 pub struct AsyncTask {
-    tasks: Arc<Mutex<Vec<Box<dyn Fn() + Send + 'static>>>>,
+    tasks: TaskList,
 }
 
 impl AsyncTask {

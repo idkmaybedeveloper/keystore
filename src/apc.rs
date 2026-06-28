@@ -11,6 +11,12 @@ pub enum ApcError {
 
 pub struct ApcService;
 
+impl Default for ApcService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApcService {
     pub fn new() -> Self {
         Self
